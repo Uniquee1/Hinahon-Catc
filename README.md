@@ -1,7 +1,5 @@
 # Hinahon-Catc
 
-Got it 👍 Thanks for laying out the updated requirements for your mental health booking app. Let’s break this down so you can clearly see **what to build, what stack to use, and how Bolt/Replit AI can help you move faster**.
-
 ---
 
 ## 🔑 Core Requirements Recap
@@ -153,5 +151,3 @@ Since your goal is to use **Bolt** (no-code/low-code + AI-driven builder) and **
 ✅ **Replit AI** = Your **backend assistant** (DB, APIs, auth, email, video integration).
 
 ---
-
-Do you want me to draft you a **system architecture diagram** (frontend → backend → DB → integrations) so you’ll have a visual map before coding?

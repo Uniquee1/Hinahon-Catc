@@ -1,153 +1,159 @@
-# Hinahon-Catc
-
----
-
-## 🔑 Core Requirements Recap
-
-1. **Authentication**
-
-   * Use **Microsoft login (school-issued accounts)**.
-   * Students and faculty sign in using their university email.
-
-2. **User Flow**
-
-   * After login → user clicks *“How do you feel?”* button → chooses an emoji.
-   * Two paths:
-
-     * **Online consultation** → Booking page → Choose date, time, counselor → Wait for confirmation email + video link.
-     * **Articles** → Redirect to emotion-specific resources.
-
-3. **Counselor Dashboard**
-
-   * View incoming requests (accept/reject).
-   * Manage/edit availability.
-   * View history (accepted/rejected).
-
-4. **Admin Dashboard**
-
-   * Manage user accounts (CRUD).
-   * Manage article contents (editable text + optional images).
-
----
-
-## 🛠️ Tech Approach with **Bolt + Replit AI**
-
-Since your goal is to use **Bolt** (no-code/low-code + AI-driven builder) and **Replit AI** (code autocompletion, debugging, hosting), here’s a practical approach:
-
----
 
 ### 1. **Authentication**
 
-* Use **Microsoft Azure AD OAuth2 / MSAL** (Microsoft Authentication Library).
-* **Bolt**: You can scaffold UI screens for login, then connect with **Azure AD login API**.
-* **Replit AI**: Help you integrate the MSAL SDK in backend (Node.js/Express).
+* Use **Supabase Auth** with **Google as the provider**.
+* Users:
 
-👉 This ensures **only school emails** can log in.
+  * Students (book appointments).
+  * Counselors (accept/reject).
+  * Admins (manage users + articles).
+* You’ll enforce roles in your DB (`role = student | counselor | admin`).
 
----
+👉 Supabase handles all of this with:
 
-### 2. **Frontend Flow**
-
-* **Bolt** excels at UI mockups → you already have designs, so feed them into Bolt to auto-generate pages:
-
-  * `Login → Emoji Selection → Online Consultation OR Articles`.
-* Use **state management** (React Context or Redux if needed).
-* **UI stack**: React + Tailwind CSS (Bolt is strong here).
-* **Emoji Selection**:
-
-  * Simple component: a set of emojis mapped to emotional states.
-  * Redirect logic handled in frontend.
+* `supabase.auth.signInWithOAuth({ provider: 'google' })`
+* Row Level Security (RLS) policies for access control.
 
 ---
 
-### 3. **Booking System**
+### 2. **User Flow**
 
-* Store **consultation requests** in database.
-* **Flow**:
+* **After login → Emoji selection** (happy, sad, anxious, etc.).
+* Based on emoji:
 
-  1. User submits request → store in DB as *pending*.
-  2. Counselor gets dashboard notification → Accept/Reject.
-  3. If accepted → trigger **email notification** with video link.
+  1. **Consultation path** → booking page.
 
-     * Could integrate **Daily.co** or **MS Teams/Zoom API** for video.
-* **Bolt**: Use it to generate UI for booking form, counselor selection, and calendar view.
-* **Replit AI**: Assist with backend logic (Express.js endpoints, MongoDB schema, CRUD).
-
----
-
-### 4. **Counselor Dashboard**
-
-* Components needed:
-
-  * Pending Requests (with Accept/Reject buttons).
-  * Manage Availability (calendar UI).
-  * Consultation History (table with accepted/rejected).
-* **Bolt**: Scaffold dashboard UI.
-* **Replit AI**: Handle API endpoints + DB queries.
+     * User chooses **date & time**.
+     * Selects from available counselors.
+     * Request stored in DB (`status = pending`).
+     * Counselor gets notification in dashboard → Accept/Reject.
+     * If accepted → send **email notification** with video call link.
+  2. **Articles path** → redirected to articles tagged with that emotion.
 
 ---
 
-### 5. **Admin Dashboard**
+### 3. **Counselor Dashboard**
 
-* CRUD for **users** and **articles**.
-* Articles:
+* View **pending requests** with Accept/Reject buttons.
+* Manage **availability** (calendar or schedule editor).
+* View **consultation history** (accepted/rejected).
 
-  * Better to use **editable text with image uploads** (instead of only static images).
-  * Store in MongoDB (`title, content, imageURL, emotionTag`).
-* **Bolt**: Auto-generate admin table UIs and article editor page.
-* **Replit AI**: Backend + rich text editor integration (e.g., Quill.js, TinyMCE).
-
----
-
-### 6. **Backend (with Replit AI)**
-
-* **Stack**: Node.js + Express.js + MongoDB Atlas.
-* Models:
-
-  * `User (role: student/counselor/admin)`
-  * `Consultation (status: pending/accepted/rejected, date, time, counselorId, studentId)`
-  * `Article (emotionTag, title, content, imageUrl)`
-  * `Availability (counselorId, scheduleSlots)`
-* **Replit AI** can:
-
-  * Generate schema boilerplates.
-  * Create REST APIs quickly (`/bookings`, `/articles`, `/users`, `/availability`).
-  * Add JWT/session handling on top of Microsoft login.
+👉 Built using a frontend framework (React + Tailwind).
+👉 Data served from Supabase DB.
 
 ---
 
-### 7. **Hosting & Workflow**
+### 4. **Admin Dashboard**
 
-* **Replit** → Great for development + quick deployments.
-* **Bolt** → Perfect for **scaffolding** UI quickly from your mockup designs.
-* Final setup:
+* Manage **user accounts** (CRUD → create, read, update, delete).
+* Manage **articles**:
 
-  * Frontend (Bolt → export React project).
-  * Backend (Replit with Node/Express).
-  * Database (MongoDB Atlas).
-  * Auth (Microsoft AD).
-  * Video Conferencing (Daily.co API or Teams).
+  * Editable text content (stored in DB).
+  * Optional images (stored in Supabase Storage).
+* Manage **counselor roles** (promote/demote).
 
 ---
 
-## 🚀 Step-by-Step Execution Plan
+### 5. **Database Design (Supabase PostgreSQL)**
 
-1. **Auth Setup First**
-   Implement Microsoft login → restrict to school emails.
-2. **Frontend Pages with Bolt**
-   Build `Login → Emoji → Consultation/Articles`.
-3. **Database Models with Replit AI**
-   Define `User, Consultation, Article, Availability`.
-4. **Booking Flow**
-   User booking → Counselor dashboard → Email confirmations.
-5. **Admin Panel**
-   Manage users + articles.
-6. **Video Integration**
-   Add Daily.co or MS Teams links into confirmation emails.
+#### Tables
+
+* **users**
+
+  * `id` (uuid, from Supabase auth)
+  * `email`
+  * `name`
+  * `role` (student/counselor/admin)
+
+* **consultations**
+
+  * `id` (uuid)
+  * `student_id` (fk → users.id)
+  * `counselor_id` (fk → users.id)
+  * `date`
+  * `time`
+  * `status` (pending/accepted/rejected)
+  * `video_link`
+
+* **articles**
+
+  * `id`
+  * `title`
+  * `content` (text/HTML)
+  * `image_url`
+  * `emotion_tag` (happy/sad/etc.)
+
+* **availability**
+
+  * `id`
+  * `counselor_id` (fk → users.id)
+  * `day`
+  * `start_time`
+  * `end_time`
 
 ---
 
-✅ **Bolt** = Your **UI builder** (rapid prototyping).
-✅ **Replit AI** = Your **backend assistant** (DB, APIs, auth, email, video integration).
+### 6. **Video Conferencing**
+
+* Since you considered **Daily.co** before → you can integrate it by generating unique links.
+* Alternative: use **Google Meet** (simpler, since you’re already using Google login).
+
+  * Counselor manually provides link, or you store a meet link in DB after acceptance.
 
 ---
+
+### 7. **Frontend Tech Stack**
+
+* **React + Tailwind CSS** (clean, responsive UI).
+* Pages:
+
+  * Login
+  * Emoji selection
+  * Booking page
+  * Articles page
+  * Counselor dashboard
+  * Admin dashboard
+
+---
+
+### 8. **Backend**
+
+* You don’t need to build a separate backend anymore — Supabase gives you:
+
+  * Database (Postgres)
+  * Auth (Google OAuth2)
+  * File storage
+  * APIs auto-generated for your tables
+
+If you need **custom logic** (e.g., send email after counselor accepts), you can:
+
+* Use **Supabase Edge Functions** (serverless functions).
+* Or, host a small **Node.js backend** (if required by thesis guidelines).
+
+---
+
+### 9. **Deployment**
+
+* **Frontend**: Vercel or Netlify (free hosting for React).
+* **Backend/DB/Auth**: Supabase.
+* **Video**: Google Meet / Daily.co.
+
+---
+
+## 🚀 Development Steps (Manual)
+
+1. **Set up Supabase project** (enable Google Auth, create tables).
+2. **Set up React project** with Tailwind.
+3. **Implement login** with Supabase Google Auth.
+4. **Emoji → conditional navigation**.
+5. **Booking flow** (create consultations in DB).
+6. **Counselor dashboard** (fetch consultations → accept/reject).
+7. **Admin dashboard** (CRUD users, articles).
+8. **Email/Video link integration**.
+9. **Styling + polish**.
+10. **Deploy to Vercel**.
+
+---
+
+
+Do you want me to start by showing you **how to enable Google Auth in Supabase and test it inside a minimal React app**? That way, you’ll have the login system ready as your foundation.

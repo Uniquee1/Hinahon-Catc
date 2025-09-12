@@ -154,6 +154,3 @@ If you need **custom logic** (e.g., send email after counselor accepts), you can
 10. **Deploy to Vercel**.
 
 ---
-
-
-Do you want me to start by showing you **how to enable Google Auth in Supabase and test it inside a minimal React app**? That way, you’ll have the login system ready as your foundation.

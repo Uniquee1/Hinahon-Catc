@@ -1,3 +1,7 @@
+// ============================================================================
+// 1. Updated LandingPage.jsx - Disable booking for guests
+// ============================================================================
+
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../supabaseClient";
@@ -35,6 +39,18 @@ export default function LandingPage({ session, setSession }) {
   ];
 
   const handleBookAppointment = () => {
+    console.log("Book appointment clicked - isGuest:", isGuest);
+    console.log("Current session:", session);
+    
+    if (isGuest) {
+      console.log("Redirecting guest to login...");
+      // Clear guest session before redirect to ensure clean login
+      localStorage.removeItem("hinahon_guest");
+      setSession(null);
+      navigate("/");
+      return;
+    }
+
     if (selectedEmotion) {
       navigate(`/booking/${selectedEmotion}`);
     } else {
@@ -43,6 +59,7 @@ export default function LandingPage({ session, setSession }) {
   };
 
   const handleReadArticles = () => {
+    // Articles are allowed for everyone including guests
     if (selectedEmotion) {
       navigate(`/articles/${selectedEmotion}`);
     } else {
@@ -80,19 +97,22 @@ export default function LandingPage({ session, setSession }) {
             >
               Articles
             </button>
-            <button 
-              onClick={() => navigate("/booking")}
-              style={{ 
-                background: "none", 
-                border: "none", 
-                color: "#666", 
-                textDecoration: "none",
-                cursor: "pointer",
-                font: "inherit"
-              }}
-            >
-              Book Session
-            </button>
+            {/* Only show booking nav for signed-in users */}
+            {!isGuest && (
+              <button 
+                onClick={() => navigate("/booking")}
+                style={{ 
+                  background: "none", 
+                  border: "none", 
+                  color: "#666", 
+                  textDecoration: "none",
+                  cursor: "pointer",
+                  font: "inherit"
+                }}
+              >
+                Book Session
+              </button>
+            )}
           </nav>
 
           {isGuest ? (
@@ -126,6 +146,21 @@ export default function LandingPage({ session, setSession }) {
             <p className="hero-note">
               The Digital Solution to Accessible Mental Health Services in the Philippines.
             </p>
+
+            {/* Show guest notice if browsing as guest */}
+            {isGuest && (
+              <div style={{
+                backgroundColor: "rgba(0,191,165,0.1)",
+                border: "1px solid var(--teal)",
+                borderRadius: "8px",
+                padding: "12px",
+                marginBottom: "20px"
+              }}>
+                <p style={{ margin: "0", fontSize: "14px", color: "var(--teal)" }}>
+                  👋 You're browsing as a guest. Sign in to book consultations with our counselors!
+                </p>
+              </div>
+            )}
 
             <div className="feeling-ask">How are you feeling today?</div>
 

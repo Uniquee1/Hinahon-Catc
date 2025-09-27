@@ -12,45 +12,68 @@ export default function App() {
   const [session, setSession] = useState(null);
   const [role, setRole] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [isRoleFetched, setIsRoleFetched] = useState(false); // Add this flag
 
-  // Fetch role for logged-in user
+  // Fetch role for logged-in user - CLEAN VERSION
   const fetchUserRole = async (user) => {
-    try {
-      console.log("Fetching role for user:", user.id, user.email);
+    // Prevent duplicate calls
+    if (isRoleFetched) {
+      console.log("Role already fetched, skipping...");
+      return;
+    }
 
-      // Admin emails list (fallback for initial setup)
+    try {
+      console.log("Fetching role for user:", user.email);
+      setIsRoleFetched(true); // Mark as fetching
+      
       const adminEmails = ['uniaccno1@gmail.com'];
       
+      // Check if hardcoded admin first
       if (adminEmails.includes(user.email)) {
-        console.log("User found in admin list, setting role to admin");
+        console.log("User is hardcoded admin");
         setRole("admin");
         setLoading(false);
         return;
       }
 
-      // Query database for user role
-      const { data, error } = await supabase
-        .from("users")
-        .select("role")
-        .eq("id", user.id)
-        .single();
+      // For non-hardcoded users, query database
+      try {
+        console.log("Querying database for role...");
+        
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('timeout')), 4000)
+        );
 
-      if (error) {
-        console.error("Database error:", error.message);
-        // If user doesn't exist in users table, create them
-        if (error.code === 'PGRST116') {
-          await createUserProfile(user);
-          setRole("student"); // Default role
+        const queryPromise = supabase
+          .from("users")
+          .select("role")
+          .eq("id", user.id)
+          .single();
+
+        const { data, error } = await Promise.race([queryPromise, timeoutPromise]);
+
+        if (error) {
+          if (error.code === 'PGRST116') {
+            console.log("User not found, creating profile...");
+            await createUserProfile(user);
+            setRole("student");
+          } else {
+            throw error;
+          }
         } else {
-          setRole("student"); // Fallback
+          console.log("Database returned role:", data.role);
+          setRole(data.role);
         }
-      } else {
-        setRole(data.role);
+
+      } catch (queryError) {
+        console.log("Database query failed:", queryError.message);
+        setRole("student");
       }
       
       setLoading(false);
+      
     } catch (err) {
-      console.error("Unexpected error fetching role:", err.message);
+      console.error("Critical error in fetchUserRole:", err);
       setRole("student");
       setLoading(false);
     }
@@ -70,6 +93,8 @@ export default function App() {
       
       if (error) {
         console.error("Error creating user profile:", error);
+      } else {
+        console.log("User profile created successfully");
       }
     } catch (err) {
       console.error("Error in createUserProfile:", err);
@@ -77,67 +102,85 @@ export default function App() {
   };
 
   useEffect(() => {
-    let mounted = true;
+  let mounted = true;
+  let authListenerActive = false;
 
-    const initializeAuth = async () => {
-      try {
-        const { data, error } = await supabase.auth.getSession();
-        
-        if (error) {
-          console.error("Error getting session:", error);
-          setLoading(false);
-          return;
-        }
-
-        if (!mounted) return;
-
-        if (data?.session) {
-          setSession(data.session);
-          await fetchUserRole(data.session.user);
-        } else if (localStorage.getItem("hinahon_guest") === "true") {
+  const initializeAuth = async () => {
+    try {
+      // Check for guest session first (before Supabase auth)
+      if (localStorage.getItem("hinahon_guest") === "true") {
+        console.log("Found guest session in localStorage");
+        if (mounted) {
           setSession({ user: { email: "guest" }, isGuest: true });
           setRole("guest");
           setLoading(false);
-        } else {
-          setLoading(false);
         }
-      } catch (err) {
-        console.error("Error in initializeAuth:", err);
+        return; // Exit early for guests
+      }
+
+      const { data, error } = await supabase.auth.getSession();
+      
+      if (error) {
+        console.error("Error getting session:", error);
+        setLoading(false);
+        return;
+      }
+
+      if (!mounted) return;
+
+      if (data?.session) {
+        setSession(data.session);
+        await fetchUserRole(data.session.user);
+      } else {
         setLoading(false);
       }
-    };
+    } catch (err) {
+      console.error("Error in initializeAuth:", err);
+      setLoading(false);
+    }
+  };
 
-    initializeAuth();
+  initializeAuth();
 
-    const { data: authListener } = supabase.auth.onAuthStateChange(
+  // Only set up auth listener for non-guest sessions
+  let authListener = null;
+  
+  if (localStorage.getItem("hinahon_guest") !== "true") {
+    authListenerActive = true;
+    
+    const { data } = supabase.auth.onAuthStateChange(
       async (event, newSession) => {
-        if (!mounted) return;
+        if (!mounted || !authListenerActive) return;
         
         console.log("Auth state changed:", event);
+
+        // Ignore auth changes if we're in guest mode
+        if (localStorage.getItem("hinahon_guest") === "true") {
+          console.log("Ignoring auth change - in guest mode");
+          return;
+        }
 
         if (event === 'SIGNED_IN' && newSession?.user) {
           setSession(newSession);
           setLoading(true);
-          localStorage.removeItem("hinahon_guest");
           await fetchUserRole(newSession.user);
         } else if (event === 'SIGNED_OUT' || !newSession) {
-          if (localStorage.getItem("hinahon_guest") === "true") {
-            setSession({ user: { email: "guest" }, isGuest: true });
-            setRole("guest");
-          } else {
-            setSession(null);
-            setRole(null);
-          }
+          setSession(null);
+          setRole(null);
           setLoading(false);
         }
       }
     );
+    
+    authListener = data;
+  }
 
-    return () => {
-      mounted = false;
-      authListener?.subscription?.unsubscribe();
-    };
-  }, []);
+  return () => {
+    mounted = false;
+    authListenerActive = false;
+    authListener?.subscription?.unsubscribe();
+  };
+}, []); // Remove all dependencies to prevent re-runs
 
   if (loading) {
     return (
@@ -208,11 +251,11 @@ export default function App() {
           }
         />
 
-        {/* Booking page */}
+        {/* Booking page - ONLY for signed-in students (NOT guests) */}
         <Route
           path="/booking/:emotion?"
           element={
-            session && (role === "student" || role === "guest") ? (
+            session && role === "student" ? (
               <BookingPage session={session} />
             ) : (
               <Navigate to="/" replace />
@@ -220,7 +263,7 @@ export default function App() {
           }
         />
 
-        {/* Articles page */}
+        {/* Articles page - Available to everyone including guests */}
         <Route
           path="/articles/:emotion?"
           element={

@@ -72,10 +72,17 @@ export default function LoginPage({ setSession }) {
   }, [navigate, setSession]);
 
   function continueAsGuest() {
-    localStorage.setItem("hinahon_guest", "true");
-    setSession({ user: { email: "guest" }, isGuest: true });
-    navigate("/landing");
-  }
+  console.log("Setting guest session...");
+  localStorage.setItem("hinahon_guest", "true");
+  
+  // Set guest session immediately without waiting for auth changes
+  const guestSession = { user: { email: "guest" }, isGuest: true };
+  setSession(guestSession);
+  
+  // Navigate immediately to prevent auth listener conflicts
+  navigate("/landing");
+}
+
 
   return (
     <div

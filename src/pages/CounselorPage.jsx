@@ -11,17 +11,11 @@ export default function CounselorPage() {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
 
-  // Availability form state
-  const [newAvailability, setNewAvailability] = useState({
-    day: "",
-    start_time: "",
-    end_time: ""
-  });
-
-  const days = [
-    "monday", "tuesday", "wednesday", "thursday", 
-    "friday", "saturday", "sunday"
-  ];
+  // Calendar and availability state
+  const [selectedDate, setSelectedDate] = useState("");
+  const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
+  const [currentMonth, setCurrentMonth] = useState(new Date());
 
   useEffect(() => {
     getCurrentUser();
@@ -70,7 +64,9 @@ export default function CounselorPage() {
         .from("availability")
         .select("*")
         .eq("counselor_id", user.id)
-        .order("day");
+        .gte("date", new Date().toISOString().split('T')[0]) // Only future dates
+        .order("date", { ascending: true })
+        .order("start_time", { ascending: true });
 
       if (error) throw error;
       setAvailability(data || []);
@@ -79,11 +75,72 @@ export default function CounselorPage() {
     }
   };
 
+  const addAvailability = async (e) => {
+    e.preventDefault();
+    
+    if (!selectedDate || !startTime || !endTime) {
+      alert("Please fill in all fields");
+      return;
+    }
+
+    if (startTime >= endTime) {
+      alert("End time must be after start time");
+      return;
+    }
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // Call the database function to generate time slots
+      const { data, error } = await supabase.rpc('add_counselor_availability', {
+        p_counselor_id: user.id,
+        p_date: selectedDate,
+        p_start_time: startTime,
+        p_end_time: endTime
+      });
+
+      if (error) throw error;
+
+      if (data > 0) {
+        setSelectedDate("");
+        setStartTime("");
+        setEndTime("");
+        fetchAvailability();
+        alert(`${data} time slots added successfully!`);
+      } else {
+        alert("No new slots were added. They may already exist.");
+      }
+    } catch (err) {
+      console.error("Error adding availability:", err);
+      alert("Failed to add availability.");
+    }
+  };
+
+  const deleteAvailabilitySlot = async (slotId) => {
+    if (!window.confirm("Are you sure you want to delete this time slot?")) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from("availability")
+        .delete()
+        .eq("id", slotId);
+
+      if (error) throw error;
+      fetchAvailability();
+      alert("Time slot deleted successfully!");
+    } catch (err) {
+      console.error("Error deleting availability:", err);
+      alert("Failed to delete time slot.");
+    }
+  };
+
   const updateConsultationStatus = async (consultationId, status) => {
     try {
       let updateData = { status };
       
-      // If accepting, generate a video link
       if (status === "accepted") {
         const videoLink = generateVideoLink();
         updateData.video_link = videoLink;
@@ -110,61 +167,8 @@ export default function CounselorPage() {
   };
 
   const generateVideoLink = () => {
-    // Placeholder video link - integrate with Daily.co later
     const roomId = Math.random().toString(36).substr(2, 9);
     return `https://hinahon.daily.co/${roomId}`;
-  };
-
-  const addAvailability = async (e) => {
-    e.preventDefault();
-    
-    if (!newAvailability.day || !newAvailability.start_time || !newAvailability.end_time) {
-      alert("Please fill in all fields");
-      return;
-    }
-
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { error } = await supabase
-        .from("availability")
-        .insert({
-          counselor_id: user.id,
-          day: newAvailability.day,
-          start_time: newAvailability.start_time,
-          end_time: newAvailability.end_time
-        });
-
-      if (error) throw error;
-
-      setNewAvailability({ day: "", start_time: "", end_time: "" });
-      fetchAvailability();
-      alert("Availability added successfully!");
-    } catch (err) {
-      console.error("Error adding availability:", err);
-      alert("Failed to add availability.");
-    }
-  };
-
-  const deleteAvailability = async (availabilityId) => {
-    if (!window.confirm("Are you sure you want to delete this availability?")) {
-      return;
-    }
-
-    try {
-      const { error } = await supabase
-        .from("availability")
-        .delete()
-        .eq("id", availabilityId);
-
-      if (error) throw error;
-      fetchAvailability();
-      alert("Availability deleted successfully!");
-    } catch (err) {
-      console.error("Error deleting availability:", err);
-      alert("Failed to delete availability.");
-    }
   };
 
   const handleSignOut = async () => {
@@ -209,6 +213,28 @@ export default function CounselorPage() {
         return baseStyle;
     }
   };
+
+  // Get minimum date (today)
+  const getMinDate = () => {
+    return new Date().toISOString().split('T')[0];
+  };
+
+  // Get maximum date (3 months from now)
+  const getMaxDate = () => {
+    const maxDate = new Date();
+    maxDate.setMonth(maxDate.getMonth() + 3);
+    return maxDate.toISOString().split('T')[0];
+  };
+
+  // Group availability by date for better display
+  const groupedAvailability = availability.reduce((acc, slot) => {
+    const date = slot.date;
+    if (!acc[date]) {
+      acc[date] = [];
+    }
+    acc[date].push(slot);
+    return acc;
+  }, {});
 
   if (loading) {
     return (
@@ -263,19 +289,19 @@ export default function CounselorPage() {
             Consultation Requests
           </button>
           <button
-            onClick={() => setActiveTab("availability")}
+            onClick={() => setActiveTab("calendar")}
             style={{
               padding: "12px 24px",
               border: "none",
               background: "none",
               cursor: "pointer",
-              borderBottom: activeTab === "availability" ? "3px solid var(--teal)" : "none",
-              color: activeTab === "availability" ? "var(--teal)" : "#666",
-              fontWeight: activeTab === "availability" ? "600" : "400",
+              borderBottom: activeTab === "calendar" ? "3px solid var(--teal)" : "none",
+              color: activeTab === "calendar" ? "var(--teal)" : "#666",
+              fontWeight: activeTab === "calendar" ? "600" : "400",
               fontSize: "16px"
             }}
           >
-            Manage Availability
+            Calendar & Availability
           </button>
         </div>
 
@@ -376,14 +402,14 @@ export default function CounselorPage() {
           </div>
         )}
 
-        {/* Availability Tab */}
-        {activeTab === "availability" && (
+        {/* Calendar & Availability Tab */}
+        {activeTab === "calendar" && (
           <div>
             <h2 style={{ color: "var(--pink)", marginBottom: "24px" }}>
-              Manage Your Availability
+              Calendar & Availability Management
             </h2>
 
-            {/* Add New Availability Form */}
+            {/* Add Availability Form */}
             <div style={{
               backgroundColor: "white",
               padding: "24px",
@@ -392,17 +418,20 @@ export default function CounselorPage() {
               marginBottom: "32px"
             }}>
               <h3 style={{ marginTop: "0", marginBottom: "20px" }}>
-                Add Availability
+                Add Available Time Slots
               </h3>
               <form onSubmit={addAvailability}>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto", gap: "16px", alignItems: "end" }}>
                   <div>
                     <label style={{ display: "block", marginBottom: "8px", fontWeight: "600" }}>
-                      Day
+                      Date
                     </label>
-                    <select
-                      value={newAvailability.day}
-                      onChange={(e) => setNewAvailability(prev => ({ ...prev, day: e.target.value }))}
+                    <input
+                      type="date"
+                      value={selectedDate}
+                      onChange={(e) => setSelectedDate(e.target.value)}
+                      min={getMinDate()}
+                      max={getMaxDate()}
                       required
                       style={{
                         width: "100%",
@@ -411,14 +440,7 @@ export default function CounselorPage() {
                         border: "1px solid #e0e0e0",
                         fontSize: "14px"
                       }}
-                    >
-                      <option value="">Select day...</option>
-                      {days.map(day => (
-                        <option key={day} value={day}>
-                          {day.charAt(0).toUpperCase() + day.slice(1)}
-                        </option>
-                      ))}
-                    </select>
+                    />
                   </div>
                   <div>
                     <label style={{ display: "block", marginBottom: "8px", fontWeight: "600" }}>
@@ -426,8 +448,8 @@ export default function CounselorPage() {
                     </label>
                     <input
                       type="time"
-                      value={newAvailability.start_time}
-                      onChange={(e) => setNewAvailability(prev => ({ ...prev, start_time: e.target.value }))}
+                      value={startTime}
+                      onChange={(e) => setStartTime(e.target.value)}
                       required
                       style={{
                         width: "100%",
@@ -444,8 +466,8 @@ export default function CounselorPage() {
                     </label>
                     <input
                       type="time"
-                      value={newAvailability.end_time}
-                      onChange={(e) => setNewAvailability(prev => ({ ...prev, end_time: e.target.value }))}
+                      value={endTime}
+                      onChange={(e) => setEndTime(e.target.value)}
                       required
                       style={{
                         width: "100%",
@@ -461,9 +483,12 @@ export default function CounselorPage() {
                     className="btn-action primary"
                     style={{ whiteSpace: "nowrap" }}
                   >
-                    Add
+                    Add Slots
                   </button>
                 </div>
+                <p style={{ color: "#666", fontSize: "14px", marginTop: "8px" }}>
+                  * Time slots will be created in 1-hour intervals between start and end time
+                </p>
               </form>
             </div>
 
@@ -475,50 +500,62 @@ export default function CounselorPage() {
               boxShadow: "var(--card-shadow)"
             }}>
               <h3 style={{ marginTop: "0", marginBottom: "20px" }}>
-                Current Availability
+                Your Upcoming Availability
               </h3>
               
-              {availability.length === 0 ? (
+              {Object.keys(groupedAvailability).length === 0 ? (
                 <p style={{ color: "#666", fontStyle: "italic" }}>
-                  No availability set. Add your available times above.
+                  No availability set. Add your available dates and times above.
                 </p>
               ) : (
-                <div style={{ display: "grid", gap: "12px" }}>
-                  {availability.map((slot) => (
-                    <div
-                      key={slot.id}
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        padding: "16px",
-                        backgroundColor: "#f8f9fa",
-                        borderRadius: "8px",
-                        border: "1px solid #e9ecef"
-                      }}
-                    >
-                      <div>
-                        <strong style={{ textTransform: "capitalize" }}>
-                          {slot.day}
-                        </strong>
-                        <span style={{ marginLeft: "16px", color: "#666" }}>
-                          {formatTime(slot.start_time)} - {formatTime(slot.end_time)}
-                        </span>
+                <div style={{ display: "grid", gap: "20px" }}>
+                  {Object.entries(groupedAvailability).map(([date, slots]) => (
+                    <div key={date} style={{
+                      border: "1px solid #e0e0e0",
+                      borderRadius: "8px",
+                      padding: "16px",
+                      backgroundColor: "#f8f9fa"
+                    }}>
+                      <h4 style={{ margin: "0 0 12px 0", color: "var(--text)" }}>
+                        {formatDate(date)}
+                      </h4>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "8px" }}>
+                        {slots.map((slot) => (
+                          <div
+                            key={slot.id}
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                              padding: "8px 12px",
+                              backgroundColor: slot.is_booked ? "#ffebee" : "white",
+                              borderRadius: "6px",
+                              border: "1px solid #e0e0e0"
+                            }}
+                          >
+                            <span style={{ fontSize: "14px" }}>
+                              {formatTime(slot.start_time)} - {formatTime(slot.end_time)}
+                              {slot.is_booked && <span style={{ color: "#d32f2f", marginLeft: "8px" }}>(Booked)</span>}
+                            </span>
+                            {!slot.is_booked && (
+                              <button
+                                onClick={() => deleteAvailabilitySlot(slot.id)}
+                                style={{
+                                  padding: "4px 8px",
+                                  backgroundColor: "#dc3545",
+                                  color: "white",
+                                  border: "none",
+                                  borderRadius: "4px",
+                                  cursor: "pointer",
+                                  fontSize: "11px"
+                                }}
+                              >
+                                Delete
+                              </button>
+                            )}
+                          </div>
+                        ))}
                       </div>
-                      <button
-                        onClick={() => deleteAvailability(slot.id)}
-                        style={{
-                          padding: "6px 12px",
-                          backgroundColor: "#dc3545",
-                          color: "white",
-                          border: "none",
-                          borderRadius: "4px",
-                          cursor: "pointer",
-                          fontSize: "12px"
-                        }}
-                      >
-                        Delete
-                      </button>
                     </div>
                   ))}
                 </div>
